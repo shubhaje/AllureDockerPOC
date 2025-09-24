@@ -27,9 +27,9 @@ RUN python -m playwright install
 # Make the script executable
 RUN chmod +x /app/run_tests.sh
 
-# Set CMD to run_tests.sh
-CMD ["./run_tests.sh"]
-RUN chmod +x /app/entrypoint.sh
+
+# Make entrypoint.sh executable if it exists
+RUN if [ -f /app/entrypoint.sh ]; then chmod +x /app/entrypoint.sh; fi
 
 # Set CMD to run_tests.sh
 CMD ["./run_tests.sh"]
