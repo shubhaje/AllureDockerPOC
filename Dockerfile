@@ -26,8 +26,5 @@ RUN python -m playwright install
 # Make the script executable
 RUN chmod +x run_tests.sh
 
-# Make the workflow script executable (add this if you have a workflow.sh)
-RUN chmod +x workflow.sh
-
-# Change the CMD to run workflow.sh instead of run_tests.sh
-CMD ["./workflow.sh"]
+# Set CMD to run_tests.sh
+CMD ["./run_tests.sh"]
