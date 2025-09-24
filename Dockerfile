@@ -16,6 +16,7 @@ WORKDIR /app
 
 # Copy everything
 COPY . .
+COPY run_tests.sh /app/run_tests.sh
 
 # Install Python packages
 RUN pip install --upgrade pip && pip install -r requirements.txt
@@ -24,7 +25,7 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 RUN python -m playwright install
 
 # Make the script executable
-RUN chmod +x run_tests.sh
+RUN chmod +x /app/run_tests.sh
 
 # Set CMD to run_tests.sh
 CMD ["./run_tests.sh"]
