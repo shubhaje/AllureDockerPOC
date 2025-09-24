@@ -26,8 +26,8 @@ RUN python -m playwright install
 # Make the script executable
 RUN chmod +x run_tests.sh
 
-# Copy entrypoint script
-COPY entrypoint.sh /app/entrypoint.sh
+# Set CMD to run_tests.sh
+CMD ["./run_tests.sh"]
 RUN chmod +x /app/entrypoint.sh
 
 # Set CMD to run_tests.sh
