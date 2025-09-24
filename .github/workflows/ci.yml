@@ -1,3 +1,7 @@
+# This workflow runs automatically on push or pull request to the 'main' branch.
+# To trigger it, push your code or open a pull request targeting 'main'.
+# You can view workflow runs and download the Allure report artifact from the Actions tab in GitHub.
+
 name: Playwright Tests with Allure
 
 on:
