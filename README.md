@@ -1,16 +1,17 @@
-# Playwright Python Allure
+# AllureDockerPOC
 
-This project demonstrates automated browser testing using [Playwright](https://playwright.dev/python/) with Python and integrates [Allure](https://docs.qameta.io/allure/) for test reporting.
+This project demonstrates automated browser testing using [Playwright](https://playwright.dev/python/) with Python and integrates [Allure](https://docs.qameta.io/allure/) for test reporting. The project name is now **AllureDockerPOC**.
 
 ## Project Structure
 
 ```
-Dockerfile
-pytest.ini
-requirements.txt
-run_tests.sh
-README.md
-/tests/
+AllureDockerPOC/
+  Dockerfile
+  pytest.ini
+  requirements.txt
+  run_tests.sh
+  README.md
+  tests/
     test_example.py
 ```
 
