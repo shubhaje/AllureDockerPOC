@@ -1,48 +1,35 @@
-# This workflow runs automatically on push or pull request to the 'main' branch.
-# To trigger it, push your code or open a pull request targeting 'main'.
-# You can view workflow runs and download the Allure report artifact from the Actions tab in GitHub.
-
-name: Playwright Tests with Allure
+name: Run Tests in Docker
 
 on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Install Playwright browsers
-        run: |
-          python -m playwright install
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Build Docker image
         run: |
-          docker build -t playwright-allure .
+          docker build \
+            --no-cache \
+            -t test-image \
+            .
 
-      - name: Run tests in Docker
+      - name: Debug: List files in image
         run: |
-          docker run --rm -v ${{ github.workspace }}:/app playwright-allure
+          docker run --rm test-image ls -l /app
 
-      - name: Upload Allure report
-        uses: actions/upload-artifact@v4
-        with:
-          name: allure-report
-          path: allure-report
+      - name: Debug: Check script permissions
+        run: |
+          docker run --rm test-image ls -l /app/run_tests.sh
+
+      - name: Run tests in container
