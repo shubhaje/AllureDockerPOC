@@ -1,35 +1,35 @@
-# Use official Python slim image
-FROM python:3.12.10-slim
+name: Run Tests in Docker
 
-# Install system dependencies
-RUN apt-get update && \
-    apt-get install -y curl unzip default-jdk nodejs npm && \
-    apt-get clean
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
-# Install Allure CLI
-RUN curl -o allure.zip -L https://github.com/allure-framework/allure2/releases/download/2.35.1/allure-2.35.1.zip && \
-    unzip allure.zip -d /opt/ && \
-    ln -s /opt/allure-2.35.1/bin/allure /usr/bin/allure && \
-    rm allure.zip
+jobs:
+  test:
+    runs-on: ubuntu-latest
 
-# Set working directory
-WORKDIR /app
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-# Copy all project files
-COPY . .
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-# Ensure run_tests.sh is executable
-RUN chmod +x /app/run_tests.sh
+      - name: Build Docker image
+        run: |
+          docker build \
+            --no-cache \
+            -t test-image \
+            .
 
-# Ensure entrypoint.sh is executable if it exists
-RUN [ -f /app/entrypoint.sh ] && chmod +x /app/entrypoint.sh || true
+      - name: Debug: List files in image
+        run: |
+          docker run --rm test-image ls -l /app
 
-# Upgrade pip and install Python dependencies
-RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+      - name: Debug: Check script permissions
+        run: |
+          docker run --rm test-image ls -l /app/run_tests.sh
 
-# Install Playwright browsers
-RUN python -m playwright install
-
-# Use absolute path for CMD to avoid permission issues
-CMD ["/app/run_tests.sh"]
+      - name: Run tests in container
