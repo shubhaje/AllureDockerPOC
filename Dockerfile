@@ -1,22 +1,8 @@
-FROM python:3.12.10-slim
-
-# Install tools
-RUN apt-get update && \
-    apt-get install -y curl unzip default-jdk nodejs npm && \
-    apt-get clean
-
-# Install Allure CLI
-RUN curl -o allure.zip -L https://github.com/allure-framework/allure2/releases/download/2.35.1/allure-2.35.1.zip && \
-    unzip allure.zip -d /opt/ && \
-    ln -s /opt/allure-2.35.1/bin/allure /usr/bin/allure && \
-    rm allure.zip
-
 # Set working directory
 WORKDIR /app
 
 # Copy everything
 COPY . .
-COPY run_tests.sh /app/run_tests.sh
 
 # Install Python packages
 RUN pip install --upgrade pip && pip install -r requirements.txt
@@ -27,9 +13,8 @@ RUN python -m playwright install
 # Make the script executable
 RUN chmod +x /app/run_tests.sh
 
-
 # Make entrypoint.sh executable if it exists
 RUN if [ -f /app/entrypoint.sh ]; then chmod +x /app/entrypoint.sh; fi
 
-# Set CMD to run_tests.sh
-CMD ["./run_tests.sh"]
+# Set CMD to run_tests.sh using absolute path
+CMD ["/app/run_tests.sh"]
