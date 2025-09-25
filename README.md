@@ -53,6 +53,25 @@ AllureDockerPOC/
   allure serve allure-results
   ```
 
+## Running Tests in Docker
+
+1. Build the Docker image:
+   ```sh
+   docker build -t playwright-allure .
+   ```
+2. Run the tests inside the container:
+   ```sh
+   docker run --rm -v $(pwd):/app playwright-allure
+   ```
+   - On Windows (PowerShell), use:
+     ```powershell
+     docker run --rm -v ${PWD}:/app playwright-allure
+     ```
+3. After the run, the `allure-results` directory will be available in your project folder. Generate the Allure report:
+   ```sh
+   allure serve allure-results
+   ```
+
 ## Running Tests with GitHub Actions (Docker)
 
 This project includes a sample GitHub Actions workflow to run tests inside Docker and generate an Allure report.
@@ -72,6 +91,18 @@ To view the Allure report locally after a workflow run:
   ```
 
 See `.github/workflows/ci.yml` for workflow details.
+
+## Integrating with GitHub Actions
+
+1. Ensure your repository contains the workflow file at `.github/workflows/ci.yml`.
+2. Push your code to GitHub.
+3. On every push or pull request to the `main` branch, GitHub Actions will:
+   - Build the Docker image.
+   - Run tests inside Docker.
+   - Upload the Allure results as an artifact.
+4. You can view workflow runs and download the Allure report from the Actions tab in your GitHub repository.
+
+See `.github/workflows/ci.yml` for the workflow configuration.
 
 ### Project Files
 - `tests/test_example.py`: Example Playwright test

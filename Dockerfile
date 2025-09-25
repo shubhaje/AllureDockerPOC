@@ -1,6 +1,7 @@
+# Use official Python slim image
 FROM python:3.12.10-slim
 
-# Install tools
+# Install system dependencies
 RUN apt-get update && \
     apt-get install -y curl unzip default-jdk nodejs npm && \
     apt-get clean
@@ -14,20 +15,21 @@ RUN curl -o allure.zip -L https://github.com/allure-framework/allure2/releases/d
 # Set working directory
 WORKDIR /app
 
-# Copy everything
+# Copy all project files
 COPY . .
 
-# Install Python packages
-RUN pip install --upgrade pip && pip install -r requirements.txt
+# Ensure run_tests.sh is executable
+RUN chmod +x /app/run_tests.sh
+
+# Ensure entrypoint.sh is executable if it exists
+RUN [ -f /app/entrypoint.sh ] && chmod +x /app/entrypoint.sh || true
+
+# Upgrade pip and install Python dependencies
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt
 
 # Install Playwright browsers
 RUN python -m playwright install
 
-# Make the script executable
-RUN chmod +x run_tests.sh
-
-# Make the workflow script executable (add this if you have a workflow.sh)
-RUN chmod +x workflow.sh
-
-# Change the CMD to run workflow.sh instead of run_tests.sh
-CMD ["./workflow.sh"]
+# Use absolute path for CMD to avoid permission issues
+CMD ["/app/run_tests.sh"]
