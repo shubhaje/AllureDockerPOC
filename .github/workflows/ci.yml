@@ -20,6 +20,13 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Create output directories
+        run: |
+          mkdir -p ${{ github.workspace }}/test-results
+          mkdir -p ${{ github.workspace }}/test-reports
+          chmod 777 ${{ github.workspace }}/test-results
+          chmod 777 ${{ github.workspace }}/test-reports
+
       - name: Build Docker image
         run: |
           docker build \
@@ -34,7 +41,16 @@ jobs:
             --name test-runner \
             -v ${{ github.workspace }}/test-results:/app/allure-results \
             -v ${{ github.workspace }}/test-reports:/app/allure-report \
+            --user $(id -u):$(id -g) \
             playwright-allure-test
+
+      - name: List test results (debug)
+        if: always()
+        run: |
+          echo "Contents of test-results:"
+          ls -la ${{ github.workspace }}/test-results/ || echo "Directory is empty or doesn't exist"
+          echo "Contents of test-reports:"
+          ls -la ${{ github.workspace }}/test-reports/ || echo "Directory is empty or doesn't exist"
 
       - name: Upload Allure Results
         if: always()
