@@ -54,7 +54,7 @@ echo "🧼 Cleaning reports..."\n\
 if [ "$SKIP_CLEANUP" = "true" ]; then\n\
   echo "Skipping cleanup as per SKIP_CLEANUP variable."\n\
 elif mountpoint -q /app/allure-results || mountpoint -q /app/allure-report; then\n\
-    ECHO "Detected mounted volumes, skipping directory removal"\n\
+    echo "Detected mounted volumes, skipping directory removal"\n\
     rm -rf /app/allure-results/* 2>/dev/null || echo "Could not clean allure-results contents"\n\
     rm -rf /app/allure-report/* 2>/dev/null || echo "Could not clean allure-report contents"\n\
 else\n\
