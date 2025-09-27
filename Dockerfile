@@ -1,10 +1,25 @@
 # Use official Python slim image
 FROM python:3.12.10-slim
 
-# Install system dependencies
+# Install system dependencies including browsers dependencies
 RUN apt-get update && \
-    apt-get install -y curl unzip default-jdk nodejs npm && \
-    apt-get clean
+    apt-get install -y \
+    curl \
+    unzip \
+    default-jdk \
+    nodejs \
+    npm \
+    wget \
+    gnupg \
+    libnss3-dev \
+    libatk-bridge2.0-dev \
+    libdrm-dev \
+    libxkbcommon-dev \
+    libgtk-3-dev \
+    libgbm-dev \
+    libasound2-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Allure CLI
 RUN curl -o allure.zip -L https://github.com/allure-framework/allure2/releases/download/2.35.1/allure-2.35.1.zip && \
@@ -15,21 +30,39 @@ RUN curl -o allure.zip -L https://github.com/allure-framework/allure2/releases/d
 # Set working directory
 WORKDIR /app
 
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Upgrade pip and install Python dependencies
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt
+
+# Install Playwright browsers with dependencies
+RUN python -m playwright install --with-deps chromium
+
 # Copy all project files
 COPY . .
 
 # Ensure run_tests.sh is executable
 RUN chmod +x /app/run_tests.sh
 
-# Ensure entrypoint.sh is executable if it exists
-RUN [ -f /app/entrypoint.sh ] && chmod +x /app/entrypoint.sh || true
+# Create a modified run script for Docker environment
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+echo "🧼 Cleaning reports..."\n\
+rm -rf allure-results allure-report\n\
+mkdir -p allure-results\n\
+\n\
+echo "🚀 Running tests..."\n\
+python -m pytest --browser chromium --alluredir=allure-results\n\
+\n\
+echo "📊 Generating Allure report..."\n\
+allure generate allure-results --clean -o allure-report\n\
+\n\
+echo "✅ Tests completed successfully!"\n\
+echo "📁 Reports generated in allure-report directory"' > /app/run_tests_docker.sh && \
+    chmod +x /app/run_tests_docker.sh
 
-# Upgrade pip and install Python dependencies
-RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
-
-# Install Playwright browsers
-RUN python -m playwright install
-
-# Use absolute path for CMD to avoid permission issues
-CMD ["/app/run_tests.sh"]
+# Use the Docker-optimized script
+CMD ["/app/run_tests_docker.sh"]

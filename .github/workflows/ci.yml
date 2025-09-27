@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -21,15 +24,47 @@ jobs:
         run: |
           docker build \
             --no-cache \
-            -t test-image \
+            -t playwright-allure-test \
             .
 
-      - name: Debug: List files in image
-        run: |
-          docker run --rm test-image ls -l /app
-
-      - name: Debug: Check script permissions
-        run: |
-          docker run --rm test-image ls -l /app/run_tests.sh
-
       - name: Run tests in container
+        run: |
+          docker run \
+            --rm \
+            --name test-runner \
+            -v ${{ github.workspace }}/test-results:/app/allure-results \
+            -v ${{ github.workspace }}/test-reports:/app/allure-report \
+            playwright-allure-test
+
+      - name: Upload Allure Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results
+          path: test-results/
+          retention-days: 30
+
+      - name: Upload Allure Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-reports
+          path: test-reports/
+          retention-days: 30
+
+      - name: Generate Allure Report
+        if: always()
+        uses: simple-elf/allure-report-action@master
+        with:
+          allure_results: test-results
+          allure_report: allure-report-gh
+          gh_pages: gh-pages
+          allure_history: allure-history
+
+      - name: Deploy to GitHub Pages
+        if: always()
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: allure-report-gh
+          publish_branch: gh-pages
