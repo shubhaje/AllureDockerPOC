@@ -6,7 +6,7 @@ rm -rf allure-results allure-report
 mkdir -p allure-results
 
 echo "🚀 Running tests..."
-pytest --headed --project=chromium --alluredir=allure-results
+pytest --alluredir=/app/allure-results --html=/app/allure-report/report.html
 
 echo "📊 Generating Allure report..."
 allure generate allure-results --clean -o allure-report
