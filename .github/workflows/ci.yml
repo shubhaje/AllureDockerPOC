@@ -46,7 +46,9 @@ jobs:
             .
 
       - name: Run tests in container
+        id: run-tests
         run: |
+          echo "🚀 Starting test execution..."
           docker run \
             --rm \
             --name test-runner \
@@ -54,52 +56,315 @@ jobs:
             -v ${{ github.workspace }}/test-reports:/app/allure-report \
             -e SKIP_CLEANUP=true \
             --user $(id -u):$(id -g) \
-            playwright-allure-test
+            playwright-allure-test 2>&1 | tee test-execution.log
+          
+          echo "📊 Test execution completed"
+          echo "Exit code: $?"
 
       - name: List test results (debug)
         if: always()
         run: |
-          echo "Contents of test-results:"
-          ls -la ${{ github.workspace }}/test-results/ || echo "Directory is empty or doesn't exist"
-          echo "Contents of test-reports:"
-          ls -la ${{ github.workspace }}/test-reports/ || echo "Directory is empty or doesn't exist"
+          echo "=== Test Execution Log ==="
+          if [ -f test-execution.log ]; then
+            echo "📋 Test execution output:"
+            cat test-execution.log
+          else
+            echo "⚠️ No test execution log found"
+          fi
+          
+          echo ""
+          echo "=== Directory Contents ==="
+          echo "📁 Workspace contents:"
+          ls -la ${{ github.workspace }}/
+          
+          echo ""
+          echo "📁 Test Results Directory:"
+          if [ -d "${{ github.workspace }}/test-results" ]; then
+            ls -la ${{ github.workspace }}/test-results/
+            if [ "$(ls -A ${{ github.workspace }}/test-results/)" ]; then
+              echo "📄 Sample files in test-results:"
+              find ${{ github.workspace }}/test-results -type f -name "*.json" -o -name "*.xml" | head -5 | xargs -I {} sh -c 'echo "File: {}"; head -10 "{}"'
+            else
+              echo "⚠️ test-results directory is empty"
+            fi
+          else
+            echo "❌ test-results directory doesn't exist"
+          fi
+          
+          echo ""
+          echo "📁 Test Reports Directory:"
+          if [ -d "${{ github.workspace }}/test-reports" ]; then
+            ls -la ${{ github.workspace }}/test-reports/
+          else
+            echo "❌ test-reports directory doesn't exist"
+          fi
 
-      - name: Upload Allure Results
+      # 🔥 THIS IS WHERE THE ENHANCED TEST SUMMARY GENERATOR CODE GOES:
+      - name: Create Test Summary
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: allure-results
-          path: test-results/
-          retention-days: 30
-
-      - name: Upload Allure Reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: allure-reports
-          path: test-reports/
-          retention-days: 30
+        run: |
+          echo "📊 Creating test execution summary..."
+          
+          # Create summary directory
+          mkdir -p allure-report-gh
+          
+          # Get current timestamp
+          TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          COMMIT_SHA="${{ github.sha }}"
+          COMMIT_SHORT="${COMMIT_SHA:0:7}"
+          
+          # Count test result files
+          RESULT_FILES=$(find test-results -name "*.json" 2>/dev/null | wc -l || echo "0")
+          XML_FILES=$(find test-results -name "*.xml" 2>/dev/null | wc -l || echo "0")
+          
+          # Get execution log content (escape for HTML)
+          if [ -f test-execution.log ]; then
+              LOG_CONTENT=$(cat test-execution.log | tail -50 | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g' | sed ':a;N;$!ba;s/\n/<br>/g')
+          else
+              LOG_CONTENT="No execution log available"
+          fi
+          
+          # Get file listing if results exist  
+          if [ -d test-results ] && [ "$(ls -A test-results 2>/dev/null)" ]; then
+              FILE_LISTING=""
+              find test-results -type f 2>/dev/null | head -20 | while read file; do
+                  SIZE=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file" 2>/dev/null || echo "unknown")
+                  echo "📄 $file ($SIZE bytes)<br>" >> /tmp/file_list
+              done
+              FILE_LISTING=$(cat /tmp/file_list 2>/dev/null || echo "Could not read file listing")
+              rm -f /tmp/file_list
+          else
+              FILE_LISTING="No test result files found"
+          fi
+          
+          # Create enhanced summary page
+          cat > allure-report-gh/summary.html << EOF
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>Test Execution Summary - AllureDockerPOC</title>
+              <style>
+                  body { 
+                      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                      margin: 0; 
+                      padding: 20px; 
+                      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                      min-height: 100vh;
+                  }
+                  .container { 
+                      max-width: 1200px; 
+                      margin: 0 auto; 
+                      background: white;
+                      border-radius: 10px;
+                      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                      overflow: hidden;
+                  }
+                  .header {
+                      background: linear-gradient(45deg, #2196F3, #21CBF3);
+                      color: white;
+                      padding: 30px;
+                      text-align: center;
+                  }
+                  .header h1 { margin: 0; font-size: 2.5em; }
+                  .header p { margin: 10px 0 0 0; opacity: 0.9; }
+                  .content { padding: 30px; }
+                  .info-grid {
+                      display: grid;
+                      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                      gap: 20px;
+                      margin: 20px 0;
+                  }
+                  .info-card {
+                      background: #f8f9fa;
+                      padding: 20px;
+                      border-radius: 8px;
+                      border-left: 4px solid #2196F3;
+                  }
+                  .info-card h3 { margin: 0 0 10px 0; color: #333; }
+                  .info-card p { margin: 5px 0; color: #666; }
+                  .log-section {
+                      background: #1e1e1e;
+                      color: #f8f8f2;
+                      padding: 20px;
+                      border-radius: 8px;
+                      margin: 20px 0;
+                      max-height: 400px;
+                      overflow-y: auto;
+                      font-family: 'Courier New', monospace;
+                      font-size: 14px;
+                  }
+                  .status-badge {
+                      display: inline-block;
+                      padding: 5px 10px;
+                      border-radius: 20px;
+                      font-size: 12px;
+                      font-weight: bold;
+                      text-transform: uppercase;
+                  }
+                  .status-success { background: #4CAF50; color: white; }
+                  .status-warning { background: #FF9800; color: white; }
+                  .btn {
+                      display: inline-block;
+                      padding: 12px 24px;
+                      background: #2196F3;
+                      color: white;
+                      text-decoration: none;
+                      border-radius: 6px;
+                      margin: 10px 5px;
+                      transition: background 0.3s;
+                  }
+                  .btn:hover { background: #1976D2; }
+              </style>
+          </head>
+          <body>
+              <div class="container">
+                  <div class="header">
+                      <h1>🧪 Test Execution Summary</h1>
+                      <p>AllureDockerPOC - Automated Test Results</p>
+                  </div>
+                  <div class="content">
+                      <div class="info-grid">
+                          <div class="info-card">
+                              <h3>📅 Execution Time</h3>
+                              <p><strong>Timestamp:</strong> $TIMESTAMP</p>
+                              <p><strong>Commit:</strong> $COMMIT_SHORT</p>
+                              <p><strong>Branch:</strong> ${{ github.ref_name }}</p>
+                          </div>
+                          <div class="info-card">
+                              <h3>📊 Test Results</h3>
+                              <p><strong>JSON Files:</strong> $RESULT_FILES</p>
+                              <p><strong>XML Files:</strong> $XML_FILES</p>
+                              <p><strong>Status:</strong> 
+                                  $(if [ "$RESULT_FILES" -gt 0 ]; then 
+                                      echo '<span class="status-badge status-success">Results Found</span>'
+                                  else 
+                                      echo '<span class="status-badge status-warning">No Results</span>'
+                                  fi)
+                              </p>
+                          </div>
+                          <div class="info-card">
+                              <h3>🔗 Quick Links</h3>
+                              <p><a href="index.html" class="btn">View Full Report</a></p>
+                              <p><a href="https://github.com/${{ github.repository }}" class="btn">Repository</a></p>
+                              <p><a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" class="btn">GitHub Actions</a></p>
+                          </div>
+                      </div>
+                      
+                      <h2>📋 Test Execution Log</h2>
+                      <div class="log-section">
+                          $LOG_CONTENT
+                      </div>
+                      
+                      <h2>📁 Test Result Files</h2>
+                      <div class="log-section">
+                          $FILE_LISTING
+                      </div>
+                  </div>
+              </div>
+          </body>
+          </html>
+          EOF
+          
+          echo "✅ Test summary created at allure-report-gh/summary.html"
 
       - name: Generate Allure Report
         if: always()
-        uses: simple-elf/allure-report-action@master
-        with:
-          allure_results: test-results
-          allure_report: allure-report-gh
-          gh_pages: gh-pages
-          allure_history: allure-history
+        run: |
+          echo "🔄 Generating Allure Report..."
+          
+          # Check if we have test results
+          if [ -d "test-results" ] && [ "$(ls -A test-results)" ]; then
+            echo "✅ Found test results, generating report..."
+            
+            # Use the allure-report-action
+            docker run --rm \
+              -v ${{ github.workspace }}/test-results:/app/allure-results \
+              -v ${{ github.workspace }}/allure-report-gh:/app/allure-report \
+              frankescobar/allure-docker-service:2.24.1 \
+              allure generate /app/allure-results --clean --output /app/allure-report
+              
+            echo "📊 Report generated successfully"
+            ls -la ${{ github.workspace }}/allure-report-gh/
+          else
+            echo "⚠️ No test results found, creating placeholder report..."
+            mkdir -p allure-report-gh
+            cat > allure-report-gh/index.html << 'EOF'
+              <!DOCTYPE html>
+              <html>
+              <head>
+                  <title>Test Results - No Tests Found</title>
+                  <style>
+                      body { font-family: Arial, sans-serif; margin: 40px; text-align: center; }
+                      .container { max-width: 600px; margin: 0 auto; }
+                      .warning { background: #fff3cd; border: 1px solid #ffeaa7; padding: 20px; border-radius: 5px; }
+                  </style>
+              </head>
+              <body>
+                  <div class="container">
+                      <h1>Test Results</h1>
+                      <div class="warning">
+                          <h2>⚠️ No test results found</h2>
+                          <p>The Docker container ran but did not produce any test results.</p>
+                          <p><strong>Possible issues:</strong></p>
+                          <ul style="text-align: left;">
+                              <li>Tests are not configured to output to /app/allure-results</li>
+                              <li>Test execution failed before results could be written</li>
+                              <li>Volume mounting issues preventing file writing</li>
+                              <li>Incorrect Allure configuration in your test setup</li>
+                          </ul>
+                          <p><em>Check the GitHub Actions logs for more details</em></p>
+                      </div>
+                  </div>
+              </body>
+              </html>
+              EOF
+                        fi
 
-      - name: Setup Pages
-        if: always()
-        uses: actions/configure-pages@v4
+                    - name: Upload Test Execution Log
+                      if: always()
+                      uses: actions/upload-artifact@v4
+                      with:
+                        name: test-execution-log
+                        path: test-execution.log
+                        retention-days: 30
 
-      - name: Upload to GitHub Pages
-        if: always()
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: allure-report-gh
+                    - name: Upload Allure Results
+                      if: always()
+                      uses: actions/upload-artifact@v4
+                      with:
+                        name: allure-results
+                        path: test-results/
+                        retention-days: 30
 
-      - name: Deploy to GitHub Pages
-        if: always()
-        id: deployment
-        uses: actions/deploy-pages@v4
+                    - name: Upload Allure Reports
+                      if: always()
+                      uses: actions/upload-artifact@v4
+                      with:
+                        name: allure-reports
+                        path: test-reports/
+                        retention-days: 30
+
+                    - name: Upload Generated Report
+                      if: always()
+                      uses: actions/upload-artifact@v4
+                      with:
+                        name: final-allure-report
+                        path: allure-report-gh/
+                        retention-days: 30
+
+                    - name: Setup Pages
+                      if: always()
+                      uses: actions/configure-pages@v4
+
+                    - name: Upload to GitHub Pages
+                      if: always()
+                      uses: actions/upload-pages-artifact@v3
+                      with:
+                        path: allure-report-gh
+
+                    - name: Deploy to GitHub Pages
+                      if: always()
+                      id: deployment
+                      uses: actions/deploy-pages@v4
