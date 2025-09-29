@@ -1,21 +1,14 @@
-name: Playwright Tests with Allure Reports
+name: Playwright Tests
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
   workflow_dispatch:
 
 permissions:
   contents: read
   pages: write
   id-token: write
-
-# Allow only one concurrent deployment
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
 
 jobs:
   test:
@@ -25,90 +18,34 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Build image
+        run: docker build -t test:latest .
 
-      - name: Create output directories
+      - name: Run tests
         run: |
-          mkdir -p ${{ github.workspace }}/allure-results
-          mkdir -p ${{ github.workspace }}/allure-report
-          chmod 777 ${{ github.workspace }}/allure-results
-          chmod 777 ${{ github.workspace }}/allure-report
+          mkdir -p allure-results
+          chmod 777 allure-results
+          docker run --rm -v $PWD/allure-results:/app/allure-results test:latest
 
-      - name: Build Docker image
-        run: |
-          docker build -t playwright-test:latest .
-
-      - name: Run Playwright tests
-        continue-on-error: true
-        run: |
-          docker run --rm \
-            -v ${{ github.workspace }}/allure-results:/app/allure-results \
-            -e CI=true \
-            playwright-test:latest
-
-      - name: Check test results
-        run: |
-          echo "Test execution completed"
-          echo "Results directory contents:"
-          ls -la ${{ github.workspace }}/allure-results/ || echo "No results directory"
-          
-          if [ -d "${{ github.workspace }}/allure-results" ] && [ "$(ls -A ${{ github.workspace }}/allure-results)" ]; then
-            echo "✅ Test results found"
-            find ${{ github.workspace }}/allure-results -type f | head -10
-          else
-            echo "⚠️ No test results generated"
-          fi
-
-      - name: Generate Allure Report
+      - name: Generate report
         if: always()
         run: |
-          if [ -d "${{ github.workspace }}/allure-results" ] && [ "$(ls -A ${{ github.workspace }}/allure-results)" ]; then
-            echo "Generating Allure report..."
+          if [ "$(ls -A allure-results)" ]; then
             docker run --rm \
-              -v ${{ github.workspace }}/allure-results:/app/allure-results \
-              -v ${{ github.workspace }}/allure-report:/app/allure-report \
+              -v $PWD/allure-results:/app/allure-results \
+              -v $PWD/allure-report:/app/allure-report \
               frankescobar/allure-docker-service:2.24.1 \
               allure generate /app/allure-results --clean -o /app/allure-report
-            
-            echo "✅ Allure report generated"
-            ls -la ${{ github.workspace }}/allure-report/
           else
-            echo "⚠️ No test results to generate report from"
-            mkdir -p ${{ github.workspace }}/allure-report
-            echo "<html><body><h1>No Test Results</h1><p>Tests did not generate any results. Check the workflow logs.</p></body></html>" > ${{ github.workspace }}/allure-report/index.html
+            mkdir -p allure-report
+            echo "<h1>No Results</h1>" > allure-report/index.html
           fi
 
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: allure-results
-          path: allure-results/
-          retention-days: 30
-
-      - name: Upload Allure report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: allure-report
-          path: allure-report/
-          retention-days: 30
-
-      - name: Setup GitHub Pages
-        if: always()
-        uses: actions/configure-pages@v4
-
-      - name: Upload Pages artifact
-        if: always()
-        uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v4
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: allure-report
-
-      - name: Deploy to GitHub Pages
-        if: always()
-        id: deployment
+      - id: deployment
         uses: actions/deploy-pages@v4
