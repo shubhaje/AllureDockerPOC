@@ -36,7 +36,7 @@ jobs:
             docker run --rm \
               -v $PWD/allure-results:/app/allure-results \
               -v $PWD/allure-report:/app/allure-report \
-              frankescobar/allure-docker-service:2.24.1 \
+              frankescobar/allure-docker-service:latest \
               allure generate /app/allure-results --clean -o /app/allure-report
           else
             mkdir -p allure-report
