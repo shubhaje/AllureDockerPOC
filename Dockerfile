@@ -1,68 +1,23 @@
-# Use official Python slim image
-FROM python:3.12.10-slim
+FROM mcr.microsoft.com/playwright/python:v1.40.0-jammy
 
-# Install system dependencies including browsers dependencies
-RUN apt-get update && \
-    apt-get install -y \
-    curl \
-    unzip \
-    default-jdk \
-    nodejs \
-    npm \
-    wget \
-    gnupg \
-    libnss3-dev \
-    libatk-bridge2.0-dev \
-    libdrm-dev \
-    libxkbcommon-dev \
-    libgtk-3-dev \
-    libgbm-dev \
-    libasound2-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Allure CLI
-RUN curl -o allure.zip -L https://github.com/allure-framework/allure2/releases/download/2.35.1/allure-2.35.1.zip && \
-    unzip allure.zip -d /opt/ && \
-    ln -s /opt/allure-2.35.1/bin/allure /usr/bin/allure && \
-    rm allure.zip
-
-# Set working directory
 WORKDIR /app
 
-# Copy requirements first for better caching
-COPY requirements.txt .
+# Install Python packages
+RUN pip install --no-cache-dir \
+    playwright==1.40.0 \
+    pytest==7.4.3 \
+    pytest-playwright==0.4.4 \
+    allure-pytest==2.13.2
 
-# Upgrade pip and install Python dependencies
-RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+# Install Playwright browsers
+RUN playwright install chromium
 
-# Install Playwright browsers with dependencies
-RUN python -m playwright install --with-deps chromium
+# Copy test files
+COPY tests/ /app/tests/
+COPY pytest.ini /app/pytest.ini
 
-# Copy all project files
-COPY . .
+# Create output directory
+RUN mkdir -p /app/allure-results
 
-# Ensure run_tests.sh is executable
-RUN chmod +x /app/run_tests.sh
-
-# Create a modified run script for Docker environment
-RUN echo '#!/bin/bash\n\
-set -e\n\
-\n\
-echo "🧼 Cleaning reports..."\n\
-echo "Cleanup disabled for containerized runs"\n\
-echo "Cleanup completed successfully"\n\
-echo "🚀 Running tests..."\n\
-python -m pytest --browser chromium --alluredir=allure-results\n\
-\n\
-echo "📊 Generating Allure report..."\n\
-allure generate allure-results --clean -o allure-report\n\
-\n\
-echo "✅ Tests completed successfully!"\n\
-echo "📁 Reports generated in allure-report directory"' > /app/run_tests_docker.sh && \
-    chmod +x /app/run_tests_docker.sh
-
-# Use the Docker-optimized script
-CMD ["python", "-m", "pytest", "tests/", "-v", "--tb=short"]
-
+# Default command
+CMD ["python", "-m", "pytest", "/app/tests/", "-v", "--alluredir=/app/allure-results"]
