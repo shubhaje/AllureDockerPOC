@@ -64,4 +64,5 @@ echo "📁 Reports generated in allure-report directory"' > /app/run_tests_docke
     chmod +x /app/run_tests_docker.sh
 
 # Use the Docker-optimized script
-CMD ["/app/run_tests_docker.sh"]
+CMD ["python", "-m", "pytest", "tests/", "-v", "--tb=short"]
+

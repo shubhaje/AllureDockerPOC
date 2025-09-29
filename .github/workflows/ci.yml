@@ -1,23 +1,28 @@
-name: Run Tests in Docker
+name: Playwright Tests with Allure Reports
 
 on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
+      - master
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
-  actions: read
+
+# Allow only one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - name: Checkout code
@@ -26,495 +31,82 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Pre-clean directories
-        run: |
-          sudo rm -rf ${{ github.workspace }}/test-results/* 2>/dev/null || true
-          sudo rm -rf ${{ github.workspace }}/test-reports/* 2>/dev/null || true
-
       - name: Create output directories
         run: |
-          mkdir -p ${{ github.workspace }}/test-results
-          mkdir -p ${{ github.workspace }}/test-reports
-          chmod 777 ${{ github.workspace }}/test-results
-          chmod 777 ${{ github.workspace }}/test-reports
+          mkdir -p ${{ github.workspace }}/allure-results
+          mkdir -p ${{ github.workspace }}/allure-report
+          chmod 777 ${{ github.workspace }}/allure-results
+          chmod 777 ${{ github.workspace }}/allure-report
 
       - name: Build Docker image
         run: |
-          docker build \
-            --no-cache \
-            -t playwright-allure-test \
-            .
+          docker build -t playwright-test:latest .
 
-      - name: Inspect Docker image first
+      - name: Run Playwright tests
+        continue-on-error: true
         run: |
-          echo "🔍 Inspecting Docker image..."
-          docker images playwright-allure-test
-          echo ""
-          echo "🔍 Checking what's inside the container..."
-          docker run --rm --entrypoint="" playwright-allure-test ls -la /app/
-          echo ""
-          echo "🔍 Checking container processes..."
-          docker run --rm --entrypoint="" playwright-allure-test ps aux 2>/dev/null || echo "ps command not available"
-
-      # 🐍 PYTHON PLAYWRIGHT DEBUG SECTION STARTS HERE
-      - name: Debug Python Playwright Setup
-        if: always()
-        run: |
-          echo "🐍 Checking Python Playwright setup..."
-          echo ""
-          echo "=== Python Environment ==="
-          echo "Python version:"
-          docker run --rm --entrypoint="" playwright-allure-test python --version || echo "❌ Python not found"
-          echo ""
-          echo "Installed Python packages (pytest/playwright/allure):"
-          docker run --rm --entrypoint="" playwright-allure-test pip list | grep -E "(playwright|pytest|allure)" || echo "❌ No playwright/pytest/allure packages found"
-          echo ""
-          echo "All installed packages:"
-          docker run --rm --entrypoint="" playwright-allure-test pip list | head -20
-          
-          echo ""
-          echo "=== Test Files ==="
-          echo "Python files in container:"
-          docker run --rm --entrypoint="" playwright-allure-test find /app -name "*.py" -type f | head -10 || echo "❌ No Python files found"
-          echo ""
-          echo "Directory structure:"
-          docker run --rm --entrypoint="" playwright-allure-test find /app -type d | head -10 || echo "❌ Could not list directories"
-          
-          echo ""
-          echo "=== Pytest Configuration ==="
-          echo "Configuration files:"
-          docker run --rm --entrypoint="" playwright-allure-test find /app -name "pytest.ini" -o -name "pyproject.toml" -o -name "setup.cfg" || echo "❌ No pytest config files found"
-          echo ""
-          echo "Contents of pytest.ini (if exists):"
-          docker run --rm --entrypoint="" playwright-allure-test cat /app/pytest.ini 2>/dev/null || echo "❌ No pytest.ini found"
-          
-          echo ""
-          echo "=== Manual pytest test ==="
-          echo "Pytest version:"
-          docker run --rm --entrypoint="" playwright-allure-test python -m pytest --version 2>/dev/null || echo "❌ Pytest not working"
-          echo ""
-          echo "Test collection (what tests would run):"
           docker run --rm \
-            -v ${{ github.workspace }}/test-results:/app/allure-results \
-            --entrypoint="" \
-            playwright-allure-test \
-            sh -c "cd /app && python -m pytest --collect-only -v" 2>/dev/null | head -20 || echo "❌ Could not collect tests"
+            -v ${{ github.workspace }}/allure-results:/app/allure-results \
+            -e CI=true \
+            playwright-test:latest
 
-      - name: Test container volume mounting
-        if: always()
+      - name: Check test results
         run: |
-          echo "🔧 Testing volume mounting..."
-          echo ""
-          echo "=== Volume Mount Test ==="
-          docker run --rm \
-            -v ${{ github.workspace }}/test-results:/app/allure-results \
-            -v ${{ github.workspace }}/test-reports:/app/allure-report \
-            --entrypoint="" \
-            playwright-allure-test \
-            sh -c "
-              echo 'Testing write permissions...'
-              echo 'test content' > /app/allure-results/volume-test.txt && echo '✅ Can write to allure-results' || echo '❌ Cannot write to allure-results'
-              echo 'test content' > /app/allure-report/volume-test.txt && echo '✅ Can write to allure-report' || echo '❌ Cannot write to allure-report'
-              echo 'Contents of mounted directories:'
-              ls -la /app/allure-results/
-              ls -la /app/allure-report/
-            "
+          echo "Test execution completed"
+          echo "Results directory contents:"
+          ls -la ${{ github.workspace }}/allure-results/ || echo "No results directory"
           
-          echo ""
-          echo "Files created on host:"
-          ls -la ${{ github.workspace }}/test-results/ || echo "No test-results directory"
-          ls -la ${{ github.workspace }}/test-reports/ || echo "No test-reports directory"
-
-      - name: Try manual pytest run
-        if: always()
-        run: |
-          echo "🧪 Attempting manual pytest run..."
-          echo ""
-          docker run --rm \
-            -v ${{ github.workspace }}/test-results:/app/allure-results \
-            -v ${{ github.workspace }}/test-reports:/app/allure-report \
-            --entrypoint="" \
-            playwright-allure-test \
-            sh -c "
-              echo 'Current directory:'; pwd
-              echo 'Contents of current directory:'; ls -la
-              echo 'Attempting to run pytest with allure output...'
-              cd /app
-              python -m pytest --alluredir=/app/allure-results --html=/app/allure-report/report.html --tb=short -v 2>&1 || echo 'Pytest run failed'
-            " | tee manual-test-log.txt
-
-      - name: Run tests in container with detailed logging
-        id: run-tests
-        run: |
-          echo "🚀 Starting main test execution..."
-          echo "🔧 Container environment:"
-          echo "  - User ID: $(id -u):$(id -g)"
-          echo "  - Mount points:"
-          echo "    - Host: ${{ github.workspace }}/test-results -> Container: /app/allure-results"
-          echo "    - Host: ${{ github.workspace }}/test-reports -> Container: /app/allure-report"
-          echo ""
-          
-          # Run with verbose logging and capture everything
-          set -x  # Enable command tracing
-          docker run \
-            --rm \
-            --name test-runner \
-            -v ${{ github.workspace }}/test-results:/app/allure-results \
-            -v ${{ github.workspace }}/test-reports:/app/allure-report \
-            -e SKIP_CLEANUP=true \
-            -e DEBUG=true \
-            --user $(id -u):$(id -g) \
-            playwright-allure-test 2>&1 | tee test-execution.log
-          
-          EXIT_CODE=${PIPESTATUS[0]}
-          set +x  # Disable command tracing
-          
-          echo ""
-          echo "📊 Test execution completed with exit code: $EXIT_CODE"
-          echo "📄 Log file size: $(wc -l test-execution.log 2>/dev/null || echo "0 lines")"
-
-      - name: Final results analysis
-        if: always()
-        run: |
-          echo "=== FINAL ANALYSIS ==="
-          echo ""
-          echo "📋 Test Execution Log:"
-          if [ -f test-execution.log ]; then
-            echo "  ✅ Log exists ($(wc -l < test-execution.log) lines)"
-            echo "  📄 Last 30 lines:"
-            tail -30 test-execution.log
-            echo ""
-            echo "  🔍 Looking for key patterns in log:"
-            echo "    Pytest patterns:"
-            grep -i "test.*py\|collected.*items\|passed\|failed\|error" test-execution.log | head -10 || echo "    No pytest patterns found"
-            echo "    Allure patterns:"
-            grep -i "allure\|report" test-execution.log | head -5 || echo "    No allure patterns found"
-            echo "    Error patterns:"
-            grep -i "error\|exception\|traceback" test-execution.log | head -5 || echo "    No error patterns found"
+          if [ -d "${{ github.workspace }}/allure-results" ] && [ "$(ls -A ${{ github.workspace }}/allure-results)" ]; then
+            echo "✅ Test results found"
+            find ${{ github.workspace }}/allure-results -type f | head -10
           else
-            echo "  ❌ No test execution log found"
+            echo "⚠️ No test results generated"
           fi
-          
-          echo ""
-          echo "📋 Manual Test Log:"
-          if [ -f manual-test-log.txt ]; then
-            echo "  ✅ Manual log exists ($(wc -l < manual-test-log.txt) lines)"
-            echo "  📄 Last 20 lines:"
-            tail -20 manual-test-log.txt
-          else
-            echo "  ❌ No manual test log found"
-          fi
-          
-          echo ""
-          echo "📁 Directory Analysis:"
-          echo "  Workspace: $(ls -la ${{ github.workspace }}/ | wc -l) items"
-          echo "  Test Results: $(ls -la ${{ github.workspace }}/test-results/ 2>/dev/null | wc -l || echo "0") items"
-          echo "  Test Reports: $(ls -la ${{ github.workspace }}/test-reports/ 2>/dev/null | wc -l || echo "0") items"
-          
-          if [ -d "${{ github.workspace }}/test-results" ] && [ "$(ls -A ${{ github.workspace }}/test-results/)" ]; then
-            echo ""
-            echo "  ✅ Files found in test-results:"
-            find ${{ github.workspace }}/test-results -type f | head -10 | while read file; do
-              echo "    📄 $(basename $file) ($(stat -c%s "$file" 2>/dev/null || echo "unknown") bytes)"
-              # Show first few lines of JSON files
-              if [[ $file == *.json ]]; then
-                echo "      Preview: $(head -3 "$file" | tr -d '\n')"
-              fi
-            done
-          else
-            echo "  ❌ test-results directory is empty or doesn't exist"
-          fi
-          
-          echo ""
-          echo "🏥 Health Check Summary:"
-          echo "  - Docker image built: $(docker images -q playwright-allure-test | wc -l) image(s)"
-          echo "  - Container can run: $(docker run --rm --entrypoint="" playwright-allure-test echo "OK" 2>/dev/null || echo "FAILED")"
-          echo "  - Volume mounts working: $([ -f "${{ github.workspace }}/test-results/volume-test.txt" ] && echo "YES" || echo "NO")"
-          echo "  - Python available: $(docker run --rm --entrypoint="" playwright-allure-test python --version 2>/dev/null | grep -q Python && echo "YES" || echo "NO")"
-          echo "  - Pytest available: $(docker run --rm --entrypoint="" playwright-allure-test python -m pytest --version 2>/dev/null | grep -q pytest && echo "YES" || echo "NO")"
-
-      - name: Create Test Summary
-        if: always()
-        run: |
-          echo "📊 Creating test execution summary..."
-          
-          # Create summary directory
-          mkdir -p allure-report-gh
-          
-          # Get current timestamp
-          TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-          COMMIT_SHA="${{ github.sha }}"
-          COMMIT_SHORT="${COMMIT_SHA:0:7}"
-          
-          # Count test result files
-          RESULT_FILES=$(find test-results -name "*.json" 2>/dev/null | wc -l || echo "0")
-          XML_FILES=$(find test-results -name "*.xml" 2>/dev/null | wc -l || echo "0")
-          
-          # Get execution log content (escape for HTML)
-          if [ -f test-execution.log ]; then
-              LOG_CONTENT=$(cat test-execution.log | tail -50 | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g' | sed ':a;N;$!ba;s/\n/<br>/g')
-          else
-              LOG_CONTENT="No execution log available"
-          fi
-          
-          # Get file listing if results exist  
-          if [ -d test-results ] && [ "$(ls -A test-results 2>/dev/null)" ]; then
-              FILE_LISTING=""
-              find test-results -type f 2>/dev/null | head -20 | while read file; do
-                  SIZE=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file" 2>/dev/null || echo "unknown")
-                  echo "📄 $file ($SIZE bytes)<br>" >> /tmp/file_list
-              done
-              FILE_LISTING=$(cat /tmp/file_list 2>/dev/null || echo "Could not read file listing")
-              rm -f /tmp/file_list
-          else
-              FILE_LISTING="No test result files found"
-          fi
-          
-          # Create enhanced summary page
-          cat > allure-report-gh/summary.html << EOF
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>Python Playwright Test Results - AllureDockerPOC</title>
-              <style>
-                  body { 
-                      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-                      margin: 0; 
-                      padding: 20px; 
-                      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                      min-height: 100vh;
-                  }
-                  .container { 
-                      max-width: 1200px; 
-                      margin: 0 auto; 
-                      background: white;
-                      border-radius: 10px;
-                      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-                      overflow: hidden;
-                  }
-                  .header {
-                      background: linear-gradient(45deg, #2196F3, #21CBF3);
-                      color: white;
-                      padding: 30px;
-                      text-align: center;
-                  }
-                  .header h1 { margin: 0; font-size: 2.5em; }
-                  .header p { margin: 10px 0 0 0; opacity: 0.9; }
-                  .content { padding: 30px; }
-                  .info-grid {
-                      display: grid;
-                      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-                      gap: 20px;
-                      margin: 20px 0;
-                  }
-                  .info-card {
-                      background: #f8f9fa;
-                      padding: 20px;
-                      border-radius: 8px;
-                      border-left: 4px solid #2196F3;
-                  }
-                  .info-card h3 { margin: 0 0 10px 0; color: #333; }
-                  .info-card p { margin: 5px 0; color: #666; }
-                  .log-section {
-                      background: #1e1e1e;
-                      color: #f8f8f2;
-                      padding: 20px;
-                      border-radius: 8px;
-                      margin: 20px 0;
-                      max-height: 400px;
-                      overflow-y: auto;
-                      font-family: 'Courier New', monospace;
-                      font-size: 14px;
-                  }
-                  .status-badge {
-                      display: inline-block;
-                      padding: 5px 10px;
-                      border-radius: 20px;
-                      font-size: 12px;
-                      font-weight: bold;
-                      text-transform: uppercase;
-                  }
-                  .status-success { background: #4CAF50; color: white; }
-                  .status-warning { background: #FF9800; color: white; }
-                  .btn {
-                      display: inline-block;
-                      padding: 12px 24px;
-                      background: #2196F3;
-                      color: white;
-                      text-decoration: none;
-                      border-radius: 6px;
-                      margin: 10px 5px;
-                      transition: background 0.3s;
-                  }
-                  .btn:hover { background: #1976D2; }
-              </style>
-          </head>
-          <body>
-              <div class="container">
-                  <div class="header">
-                      <h1>🐍 Python Playwright Test Results</h1>
-                      <p>AllureDockerPOC - Automated Test Execution Summary</p>
-                  </div>
-                  <div class="content">
-                      <div class="info-grid">
-                          <div class="info-card">
-                              <h3>📅 Execution Details</h3>
-                              <p><strong>Timestamp:</strong> $TIMESTAMP</p>
-                              <p><strong>Commit:</strong> $COMMIT_SHORT</p>
-                              <p><strong>Branch:</strong> ${{ github.ref_name }}</p>
-                              <p><strong>Framework:</strong> Python + Playwright + Pytest</p>
-                          </div>
-                          <div class="info-card">
-                              <h3>📊 Test Results</h3>
-                              <p><strong>JSON Files:</strong> $RESULT_FILES</p>
-                              <p><strong>XML Files:</strong> $XML_FILES</p>
-                              <p><strong>Status:</strong> 
-                                  $(if [ "$RESULT_FILES" -gt 0 ]; then 
-                                      echo '<span class="status-badge status-success">Results Found</span>'
-                                  else 
-                                      echo '<span class="status-badge status-warning">No Results</span>'
-                                  fi)
-                              </p>
-                          </div>
-                          <div class="info-card">
-                              <h3>🔗 Quick Links</h3>
-                              <p><a href="index.html" class="btn">View Full Report</a></p>
-                              <p><a href="https://github.com/${{ github.repository }}" class="btn">Repository</a></p>
-                              <p><a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" class="btn">GitHub Actions</a></p>
-                          </div>
-                      </div>
-                      
-                      <h2>📋 Test Execution Log</h2>
-                      <div class="log-section">
-                          $LOG_CONTENT
-                      </div>
-                      
-                      <h2>📁 Generated Files</h2>
-                      <div class="log-section">
-                          $FILE_LISTING
-                      </div>
-                  </div>
-              </div>
-          </body>
-          </html>
-          EOF
-          
-          echo "✅ Test summary created at allure-report-gh/summary.html"
 
       - name: Generate Allure Report
         if: always()
         run: |
-          echo "🔄 Generating Allure Report..."
-          
-          # Check if we have test results
-          if [ -d "test-results" ] && [ "$(ls -A test-results)" ]; then
-            echo "✅ Found test results, generating report..."
-            
-            # Use the allure-report-action
+          if [ -d "${{ github.workspace }}/allure-results" ] && [ "$(ls -A ${{ github.workspace }}/allure-results)" ]; then
+            echo "Generating Allure report..."
             docker run --rm \
-              -v ${{ github.workspace }}/test-results:/app/allure-results \
-              -v ${{ github.workspace }}/allure-report-gh:/app/allure-report \
+              -v ${{ github.workspace }}/allure-results:/app/allure-results \
+              -v ${{ github.workspace }}/allure-report:/app/allure-report \
               frankescobar/allure-docker-service:2.24.1 \
-              allure generate /app/allure-results --clean --output /app/allure-report
-              
-            echo "📊 Report generated successfully"
-            ls -la ${{ github.workspace }}/allure-report-gh/
+              allure generate /app/allure-results --clean -o /app/allure-report
+            
+            echo "✅ Allure report generated"
+            ls -la ${{ github.workspace }}/allure-report/
           else
-            echo "⚠️ No test results found, creating placeholder report..."
-            mkdir -p allure-report-gh
-            
-            # Create placeholder HTML file
-            cat > allure-report-gh/index.html << 'HTMLEOF'
-          <!DOCTYPE html>
-          <html>
-          <head>
-              <title>Python Playwright Test Results - No Tests Found</title>
-              <style>
-                  body { font-family: Arial, sans-serif; margin: 40px; text-align: center; background: #f5f5f5; }
-                  .container { max-width: 800px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-                  .warning { background: #fff3cd; border: 1px solid #ffeaa7; padding: 30px; border-radius: 8px; margin: 20px 0; }
-                  .debug-section { background: #f8f9fa; border: 1px solid #e9ecef; padding: 20px; border-radius: 8px; text-align: left; margin: 20px 0; }
-                  ul { text-align: left; }
-                  .code { background: #e9ecef; padding: 15px; border-radius: 4px; font-family: monospace; margin: 10px 0; }
-              </style>
-          </head>
-          <body>
-              <div class="container">
-                  <h1>🐍 Python Playwright Test Results</h1>
-                  <div class="warning">
-                      <h2>⚠️ No test results found</h2>
-                      <p>The Docker container ran but did not produce any Allure test results.</p>
-                      
-                      <div class="debug-section">
-                          <h3>🔍 For Python Playwright + Pytest, check:</h3>
-                          <ul>
-                              <li><strong>Required packages:</strong> Make sure your Dockerfile installs pytest, playwright, pytest-playwright, allure-pytest</li>
-                              <li><strong>Pytest command:</strong> Your container should run: pytest --alluredir=/app/allure-results tests/</li>
-                    <li><strong>Test files:</strong> Ensure test files are named test_*.py or *_test.py</li>
-                    <li><strong>Directory structure:</strong> Tests should be in /app/tests/ in the container</li>
-                    <li><strong>Playwright browsers:</strong> Run playwright install in Dockerfile</li>
-                </ul>
-            </div>
-            
-            <p><strong>Check the GitHub Actions logs for detailed debug information!</strong></p>
-                    </div>
-                </div>
-            </body>
-          </html>
-          HTMLEOF
-              fi
+            echo "⚠️ No test results to generate report from"
+            mkdir -p ${{ github.workspace }}/allure-report
+            echo "<html><body><h1>No Test Results</h1><p>Tests did not generate any results. Check the workflow logs.</p></body></html>" > ${{ github.workspace }}/allure-report/index.html
+          fi
 
-      - name: Upload Test Execution Log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-execution-log
-          path: test-execution.log
-          retention-days: 30
-
-      - name: Upload Manual Test Log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: manual-test-log
-          path: manual-test-log.txt
-          retention-days: 30
-
-      - name: Upload Allure Results
+      - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: allure-results
-          path: test-results/
+          path: allure-results/
           retention-days: 30
 
-      - name: Upload Allure Reports
+      - name: Upload Allure report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: allure-reports
-          path: test-reports/
+          name: allure-report
+          path: allure-report/
           retention-days: 30
 
-      - name: Upload Generated Report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: final-allure-report
-          path: allure-report-gh/
-          retention-days: 30
-
-      - name: Setup Pages
+      - name: Setup GitHub Pages
         if: always()
         uses: actions/configure-pages@v4
 
-      - name: Upload to GitHub Pages
+      - name: Upload Pages artifact
         if: always()
         uses: actions/upload-pages-artifact@v3
         with:
-          path: allure-report-gh
+          path: allure-report
 
       - name: Deploy to GitHub Pages
         if: always()
